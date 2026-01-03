@@ -22,11 +22,41 @@ mkdir -p ${WORK_DIR}
 cd ${WORK_DIR}
 
 # =============================================================================
+# Detect Module Type (CM4 or CM5)
+# =============================================================================
+detect_module() {
+    # Check /etc/uconsole-release first (set by installer)
+    if [ -f /etc/uconsole-release ]; then
+        source /etc/uconsole-release
+        echo "$UCONSOLE_MODULE"
+        return
+    fi
+
+    # Detect by SoC
+    if grep -q "BCM2712" /proc/cpuinfo 2>/dev/null; then
+        echo "cm5"
+    elif grep -q "BCM2711" /proc/cpuinfo 2>/dev/null; then
+        echo "cm4"
+    else
+        echo "cm4"  # Default to CM4
+    fi
+}
+
+MODULE=$(detect_module)
+log "Detected module: ${MODULE^^}"
+
+# =============================================================================
 # ClockworkPi uConsole Kernel Modules and Overlays
 # =============================================================================
 
 log "Installing kernel headers..."
-pacman -S --noconfirm --needed linux-rpi-headers dkms
+if [ "$MODULE" = "cm5" ]; then
+    # CM5 uses Pi 5 kernel
+    pacman -S --noconfirm --needed linux-rpi-16k-headers dkms 2>/dev/null || \
+    pacman -S --noconfirm --needed linux-rpi-headers dkms
+else
+    pacman -S --noconfirm --needed linux-rpi-headers dkms
+fi
 
 log "Cloning uConsole kernel modules..."
 if [ ! -d "uConsole" ]; then

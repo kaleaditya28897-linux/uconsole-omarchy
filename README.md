@@ -1,6 +1,6 @@
 # uConsole Omarchy
 
-A minimal, terminal-centric Arch Linux setup for ClockworkPi uConsole with Raspberry Pi CM4.
+A minimal, terminal-centric Arch Linux setup for ClockworkPi uConsole.
 
 ## Features
 
@@ -8,33 +8,96 @@ A minimal, terminal-centric Arch Linux setup for ClockworkPi uConsole with Raspb
 - **Hyprland** - Modern Wayland compositor with tiling
 - **Development Environment** - Neovim, tmux, zsh, starship
 - **Security Tools** - Pentesting, network analysis, forensics
+- **4G Modem Support** - ModemManager + NetworkManager
 - **Optimized for uConsole** - Battery management, power saving, small screen UI
+
+## Supported Hardware
+
+| Module | Storage Options |
+|--------|-----------------|
+| **CM4** (BCM2711) | SD Card, eMMC, NVMe |
+| **CM5** (BCM2712) | SD Card, eMMC, NVMe |
 
 ## Requirements
 
-- ClockworkPi uConsole with Raspberry Pi CM4 (8GB RAM recommended)
-- MicroSD card (32GB+ recommended)
-- Another Linux machine for initial SD card preparation
+- ClockworkPi uConsole with CM4 or CM5 (8GB RAM recommended)
+- Storage: MicroSD card, eMMC, or NVMe SSD (32GB+ recommended)
+- Another Linux machine for initial installation
 
 ## Installation
 
-### Phase 1: Prepare SD Card (on host machine)
+### Quick Start (SD Card)
 
 ```bash
 # Clone this repo
-git clone <repo-url> uconsole-omarchy
+git clone https://github.com/kaleaditya28897-linux/uconsole-omarchy.git
 cd uconsole-omarchy
 
 # Make scripts executable
 chmod +x scripts/*.sh
 
-# Prepare SD card (replace /dev/sdX with your device)
-sudo ./scripts/01-base-install.sh /dev/sdX
+# Install to SD card (CM4, default)
+sudo ./scripts/01-install.sh /dev/sdX
 ```
 
-### Phase 2: First Boot (on uConsole)
+### Installation Options
 
-1. Insert SD card into uConsole and power on
+The universal installer supports multiple configurations:
+
+```bash
+# CM4 + SD Card (default)
+sudo ./scripts/01-install.sh /dev/sdX
+
+# CM4 + eMMC
+sudo ./scripts/01-install.sh -m cm4 -s emmc /dev/sdX
+
+# CM4 + NVMe
+sudo ./scripts/01-install.sh -m cm4 -s nvme /dev/nvme0n1
+
+# CM5 + SD Card
+sudo ./scripts/01-install.sh -m cm5 /dev/sdX
+
+# CM5 + eMMC
+sudo ./scripts/01-install.sh -m cm5 -s emmc /dev/sdX
+
+# CM5 + NVMe
+sudo ./scripts/01-install.sh -m cm5 -s nvme /dev/nvme0n1
+```
+
+### eMMC Installation
+
+To flash the eMMC, you need to use `rpiboot` to expose it as a USB mass storage device:
+
+```bash
+# Install rpiboot (run once on host machine)
+sudo ./scripts/00-rpiboot-setup.sh
+
+# Set boot switch on uConsole to USB boot mode
+# Connect uConsole via USB-C
+
+# Expose eMMC
+sudo rpiboot
+
+# Wait for device to appear, then flash
+sudo ./scripts/01-install.sh -m cm4 -s emmc /dev/sdX
+```
+
+### NVMe Installation
+
+For NVMe boot, you may need to update the EEPROM:
+
+```bash
+# Flash NVMe
+sudo ./scripts/01-install.sh -m cm4 -s nvme /dev/nvme0n1
+
+# After first boot, update EEPROM for NVMe boot:
+sudo rpi-eeprom-config --edit
+# Set: BOOT_ORDER=0xf416
+```
+
+### First Boot (on uConsole)
+
+1. Insert storage and power on
 2. Login as `alarm` / `alarm`
 3. Switch to root: `su -` (password: `root`)
 4. Run first boot setup:
@@ -43,9 +106,9 @@ sudo ./scripts/01-base-install.sh /dev/sdX
 ./first-boot.sh
 ```
 
-### Phase 3: Install Components
+### Install Components
 
-Copy the scripts to the uConsole and run in order:
+Copy scripts to uConsole and run in order:
 
 ```bash
 # Transfer scripts (from host)
@@ -54,15 +117,15 @@ scp -r uconsole-omarchy alarm@<uconsole-ip>:~/
 # On uConsole, as root:
 cd ~/uconsole-omarchy/scripts
 
-./02-uconsole-drivers.sh    # Hardware drivers
-./02a-modem-setup.sh        # 4G modem + NetworkManager (if you have 4G module)
+./02-uconsole-drivers.sh      # Hardware drivers (auto-detects CM4/CM5)
+./02a-modem-setup.sh          # 4G modem + NetworkManager (optional)
 reboot
 
-./03-install-hyprland.sh    # Hyprland + Wayland
-./04-setup-environment.sh   # Dev tools, neovim, zsh
+./03-install-hyprland.sh      # Hyprland + Wayland
+./04-setup-environment.sh     # Dev tools, neovim, zsh
 ./05-install-security-tools.sh  # Security/hacking tools
-./06-system-services.sh     # Power management, services
-./07-bootstrap.sh           # Final setup
+./06-system-services.sh       # Power management, services
+./07-bootstrap.sh             # Final setup
 
 reboot
 ```
@@ -92,21 +155,34 @@ Run `keys` for a quick reference. Key bindings:
 ```
 uconsole-omarchy/
 ├── scripts/
-│   ├── 01-base-install.sh      # SD card preparation
-│   ├── 02-uconsole-drivers.sh  # Hardware drivers
-│   ├── 03-install-hyprland.sh  # Hyprland compositor
+│   ├── 00-rpiboot-setup.sh    # rpiboot for eMMC flashing
+│   ├── 01-install.sh          # Universal installer (CM4/CM5, SD/eMMC/NVMe)
+│   ├── 02-uconsole-drivers.sh # Hardware drivers
+│   ├── 02a-modem-setup.sh     # 4G modem setup
+│   ├── 03-install-hyprland.sh # Hyprland compositor
 │   ├── 04-setup-environment.sh # Dev environment
 │   ├── 05-install-security-tools.sh
-│   ├── 06-system-services.sh   # Power management
-│   └── 07-bootstrap.sh         # Final setup
+│   ├── 06-system-services.sh  # Power management
+│   └── 07-bootstrap.sh        # Final setup
 ├── configs/
-│   ├── hyprland/               # Hyprland config
-│   ├── waybar/                 # Status bar
-│   ├── foot/                   # Terminal
-│   ├── fuzzel/                 # Launcher
-│   └── mako/                   # Notifications
+│   ├── waybar/                # Status bar
+│   ├── foot/                  # Terminal
+│   ├── fuzzel/                # Launcher
+│   └── mako/                  # Notifications
+├── LICENSE
 └── README.md
 ```
+
+## CM5 Notes
+
+The Raspberry Pi CM5 uses the BCM2712 SoC (same as Pi 5). Key differences:
+
+- **Performance**: Faster CPU, PCIe Gen 3 support
+- **Kernel**: May require `linux-rpi-16k` package
+- **Drivers**: Some uConsole-specific drivers may need updates
+- **Power**: Better power management, different thermal characteristics
+
+The installer and driver scripts automatically detect CM4 vs CM5 and apply appropriate configurations.
 
 ## Customization
 
@@ -153,14 +229,23 @@ modem setup <your-apn>
 modem connect
 ```
 
+### NVMe not booting
+```bash
+# Check EEPROM boot order
+sudo rpi-eeprom-config
+
+# Update to boot from NVMe
+sudo rpi-eeprom-config --edit
+# Set: BOOT_ORDER=0xf416
+```
+
 ### Battery not showing
-The AXP228 power management chip requires specific kernel modules. Check if they're loaded:
+The AXP228 power management chip requires specific kernel modules:
 ```bash
 lsmod | grep axp
 ```
 
 ### Hyprland crashes
-Check logs:
 ```bash
 journalctl --user -u hyprland
 cat ~/.local/share/hyprland/hyprland.log
@@ -187,3 +272,7 @@ cat ~/.local/share/hyprland/hyprland.log
 - Ansible, Terraform
 - TLP power management
 - Zram swap
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
