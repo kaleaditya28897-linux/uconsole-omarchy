@@ -1,0 +1,157 @@
+/* =============================================================================
+   uConsole Omarchy - Waybar Style
+   Minimal, cyberdeck-inspired theme
+   ============================================================================= */
+
+* {
+    font-family: "JetBrainsMono Nerd Font", "Font Awesome 6 Free", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    min-height: 0;
+}
+
+window#waybar {
+    background: rgba(26, 27, 38, 0.9);
+    border-bottom: 2px solid rgba(122, 162, 247, 0.5);
+    color: #c0caf5;
+}
+
+window#waybar.hidden {
+    opacity: 0.2;
+}
+
+/* Module styling */
+#workspaces,
+#window,
+#clock,
+#cpu,
+#memory,
+#temperature,
+#network,
+#pulseaudio,
+#bluetooth,
+#custom-battery,
+#tray {
+    padding: 0 8px;
+    margin: 2px 2px;
+    border-radius: 4px;
+    background: rgba(36, 40, 59, 0.8);
+}
+
+/* Workspaces */
+#workspaces {
+    padding: 0 2px;
+}
+
+#workspaces button {
+    padding: 0 6px;
+    margin: 2px 1px;
+    color: #565f89;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+#workspaces button:hover {
+    background: rgba(122, 162, 247, 0.2);
+    color: #7aa2f7;
+}
+
+#workspaces button.active {
+    background: #7aa2f7;
+    color: #1a1b26;
+}
+
+#workspaces button.urgent {
+    background: #f7768e;
+    color: #1a1b26;
+}
+
+/* Window title */
+#window {
+    color: #9ece6a;
+    font-weight: 600;
+}
+
+/* Clock */
+#clock {
+    color: #bb9af7;
+    font-weight: 700;
+}
+
+/* System monitors */
+#cpu {
+    color: #7dcfff;
+}
+
+#memory {
+    color: #e0af68;
+}
+
+#temperature {
+    color: #9ece6a;
+}
+
+#temperature.critical {
+    background: #f7768e;
+    color: #1a1b26;
+}
+
+/* Battery */
+#custom-battery {
+    color: #9ece6a;
+}
+
+/* Network */
+#network {
+    color: #7aa2f7;
+}
+
+#network.disconnected {
+    color: #f7768e;
+}
+
+/* Bluetooth */
+#bluetooth {
+    color: #7aa2f7;
+}
+
+#bluetooth.connected {
+    color: #9ece6a;
+}
+
+/* Audio */
+#pulseaudio {
+    color: #bb9af7;
+}
+
+#pulseaudio.muted {
+    color: #565f89;
+}
+
+/* Tray */
+#tray {
+    padding: 0 4px;
+}
+
+#tray > .passive {
+    -gtk-icon-effect: dim;
+}
+
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+    background: #f7768e;
+}
+
+/* Tooltip */
+tooltip {
+    background: rgba(26, 27, 38, 0.95);
+    border: 1px solid #7aa2f7;
+    border-radius: 6px;
+}
+
+tooltip label {
+    color: #c0caf5;
+    padding: 4px;
+}

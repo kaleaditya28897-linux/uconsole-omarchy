@@ -1,0 +1,34 @@
+# =============================================================================
+# uConsole Omarchy - Mako Notification Configuration
+# =============================================================================
+
+max-visible=3
+sort=-time
+layer=overlay
+anchor=top-right
+
+font=JetBrainsMono Nerd Font 10
+background-color=#1a1b26ee
+text-color=#c0caf5
+width=280
+height=80
+margin=8
+padding=12
+border-size=2
+border-color=#7aa2f7
+border-radius=8
+default-timeout=5000
+ignore-timeout=0
+
+[urgency=low]
+border-color=#565f89
+default-timeout=3000
+
+[urgency=normal]
+border-color=#7aa2f7
+default-timeout=5000
+
+[urgency=high]
+border-color=#f7768e
+background-color=#1a1b26
+default-timeout=0
