@@ -1,0 +1,41 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+
+# Build artifacts
+*.tar.gz
+*.zip
+*.img
+
+# Local configuration
+.env
+.env.local
+*.local.sh
+
+# Cache
+.cache/
+__pycache__/
+*.pyc
+
+# Downloaded files during install
+ArchLinuxARM-*.tar.gz
+SecLists/
