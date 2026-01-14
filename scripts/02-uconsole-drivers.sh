@@ -1,7 +1,11 @@
 #!/bin/bash
 # =============================================================================
 # uConsole Omarchy - Hardware Drivers Installation
-# Installs uConsole-specific drivers and overlays
+# Configures uConsole-specific hardware support
+#
+# NOTE: If using the recommended hybrid installation (PotatoMania's base image),
+# the kernel and core drivers are already installed. This script adds additional
+# configuration and utilities.
 # =============================================================================
 
 set -e
@@ -9,23 +13,56 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 log() { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
+info() { echo -e "${CYAN}[i]${NC} $1"; }
 
 [ "$EUID" -ne 0 ] && error "Run as root"
 
-WORK_DIR="/tmp/uconsole-drivers"
-mkdir -p ${WORK_DIR}
-cd ${WORK_DIR}
+echo ""
+echo "=============================================="
+echo " uConsole Hardware Configuration"
+echo "=============================================="
+echo ""
+
+# =============================================================================
+# Detect if running on pre-configured base image
+# =============================================================================
+detect_base_image() {
+    # Check for PotatoMania's image markers
+    if pacman -Qs linux-uconsole &>/dev/null; then
+        echo "potatomania"
+        return
+    fi
+
+    # Check for uConsole overlays in boot
+    if [ -f /boot/overlays/devterm-panel-uc.dtbo ] || \
+       [ -f /boot/overlays/uconsole.dtbo ]; then
+        echo "preconfigured"
+        return
+    fi
+
+    # Check if display is working (DSI panel loaded)
+    if dmesg | grep -qi "panel-clockwork\|cwu50\|cwd686" 2>/dev/null; then
+        echo "preconfigured"
+        return
+    fi
+
+    echo "manual"
+}
+
+BASE_IMAGE=$(detect_base_image)
+log "Detected base image type: ${BASE_IMAGE}"
 
 # =============================================================================
 # Detect Module Type (CM4 or CM5)
 # =============================================================================
 detect_module() {
-    # Check /etc/uconsole-release first (set by installer)
+    # Check /etc/uconsole-release first (set by manual installer)
     if [ -f /etc/uconsole-release ]; then
         source /etc/uconsole-release
         echo "$UCONSOLE_MODULE"
@@ -46,92 +83,63 @@ MODULE=$(detect_module)
 log "Detected module: ${MODULE^^}"
 
 # =============================================================================
-# ClockworkPi uConsole Kernel Modules and Overlays
+# Skip kernel installation if using pre-configured image
 # =============================================================================
-
-log "Installing kernel headers..."
-if [ "$MODULE" = "cm5" ]; then
-    # CM5 uses Pi 5 kernel
-    pacman -S --noconfirm --needed linux-rpi-16k-headers dkms 2>/dev/null || \
-    pacman -S --noconfirm --needed linux-rpi-headers dkms
+if [ "$BASE_IMAGE" = "potatomania" ] || [ "$BASE_IMAGE" = "preconfigured" ]; then
+    info "Pre-configured base image detected!"
+    info "Skipping kernel/overlay installation (already present)"
+    echo ""
 else
-    pacman -S --noconfirm --needed linux-rpi-headers dkms
+    warn "Manual installation detected - kernel setup may be needed"
+    warn "Consider using the recommended hybrid installation instead"
+    warn "See README.md for details"
+    echo ""
+
+    # Original kernel installation logic for manual installs
+    WORK_DIR="/tmp/uconsole-drivers"
+    mkdir -p ${WORK_DIR}
+    cd ${WORK_DIR}
+
+    log "Installing kernel headers..."
+    if [ "$MODULE" = "cm5" ]; then
+        pacman -S --noconfirm --needed linux-rpi-16k-headers dkms 2>/dev/null || \
+        pacman -S --noconfirm --needed linux-rpi-headers dkms
+    else
+        pacman -S --noconfirm --needed linux-rpi-headers dkms 2>/dev/null || true
+    fi
+
+    log "Cloning uConsole kernel modules..."
+    if [ ! -d "uConsole" ]; then
+        git clone https://github.com/clockworkpi/uConsole.git
+    fi
+
+    # Try to build overlays from source
+    cd uConsole/Code
+    if [ -d "kernel/dts/overlays" ]; then
+        log "Building device tree overlays..."
+        cd kernel/dts/overlays
+        for dts in *.dts; do
+            if [ -f "$dts" ]; then
+                dtc -@ -I dts -O dtb -o "/boot/overlays/${dts%.dts}.dtbo" "$dts" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    cd /
+    rm -rf ${WORK_DIR}
 fi
 
-log "Cloning uConsole kernel modules..."
-if [ ! -d "uConsole" ]; then
-    git clone https://github.com/clockworkpi/uConsole.git
-fi
+# =============================================================================
+# Audio Configuration (applies to all installations)
+# =============================================================================
+log "Configuring audio..."
 
-cd uConsole/Code
-
-# -----------------------------------------------------------------------------
-# Display Panel Driver
-# -----------------------------------------------------------------------------
-log "Building display panel driver..."
-cd kernel/dts/overlays 2>/dev/null || cd ../kernel/dts/overlays 2>/dev/null || {
-    warn "Display overlay directory not found, creating manual overlay..."
-    mkdir -p /tmp/uconsole-overlay
-    cd /tmp/uconsole-overlay
-
-    cat > uconsole-display-overlay.dts << 'EOF'
-/dts-v1/;
-/plugin/;
-
-/ {
-    compatible = "brcm,bcm2711";
-
-    fragment@0 {
-        target = <&dsi1>;
-        __overlay__ {
-            #address-cells = <1>;
-            #size-cells = <0>;
-            status = "okay";
-
-            panel@0 {
-                compatible = "clockwork,cwd686";
-                reg = <0>;
-                reset-gpios = <&gpio 26 1>;
-                backlight = <&backlight>;
-                rotation = <90>;
-            };
-        };
-    };
-
-    fragment@1 {
-        target-path = "/";
-        __overlay__ {
-            backlight: backlight {
-                compatible = "gpio-backlight";
-                gpios = <&gpio 18 0>;
-                default-on;
-            };
-        };
-    };
-};
-EOF
-}
-
-# Compile overlay if source exists
-if [ -f "*.dts" ] || [ -f "uconsole-display-overlay.dts" ]; then
-    log "Compiling device tree overlay..."
-    for dts in *.dts; do
-        dtc -@ -I dts -O dtb -o "/boot/overlays/${dts%.dts}.dtbo" "$dts" 2>/dev/null || true
-    done
-fi
-
-cd ${WORK_DIR}
-
-# -----------------------------------------------------------------------------
-# Audio Driver (ES8388)
-# -----------------------------------------------------------------------------
-log "Setting up audio driver..."
 cat > /etc/modprobe.d/uconsole-audio.conf << 'EOF'
 # uConsole ES8388 Audio
 options snd_bcm2835 enable_headphones=1 enable_hdmi=0
 EOF
 
-# ALSA configuration for ES8388
+# ALSA configuration
 cat > /etc/asound.conf << 'EOF'
 pcm.!default {
     type hw
@@ -144,23 +152,37 @@ ctl.!default {
 }
 EOF
 
-# -----------------------------------------------------------------------------
-# Battery/Power Management (AXP228)
-# -----------------------------------------------------------------------------
-log "Setting up power management..."
+# =============================================================================
+# Battery/Power Management Utilities
+# =============================================================================
+log "Setting up power management utilities..."
 
-cat > /etc/udev/rules.d/99-uconsole-battery.rules << 'EOF'
-# uConsole AXP228 Power Management
-SUBSYSTEM=="power_supply", ATTR{type}=="Battery", RUN+="/usr/local/bin/uconsole-battery-monitor"
-EOF
-
-cat > /usr/local/bin/uconsole-battery-monitor << 'BATTERY'
+# Battery monitor script
+cat > /usr/local/bin/uconsole-battery << 'BATTERY'
 #!/bin/bash
 # uConsole Battery Monitor
 
-BATTERY_PATH="/sys/class/power_supply/axp20x-battery"
+# Try different battery paths
+BATTERY_PATHS=(
+    "/sys/class/power_supply/axp20x-battery"
+    "/sys/class/power_supply/BAT0"
+    "/sys/class/power_supply/battery"
+)
 
-get_battery_percent() {
+BATTERY_PATH=""
+for path in "${BATTERY_PATHS[@]}"; do
+    if [ -d "$path" ]; then
+        BATTERY_PATH="$path"
+        break
+    fi
+done
+
+if [ -z "$BATTERY_PATH" ]; then
+    echo "Battery not found"
+    exit 1
+fi
+
+get_percent() {
     if [ -f "${BATTERY_PATH}/capacity" ]; then
         cat "${BATTERY_PATH}/capacity"
     else
@@ -168,7 +190,7 @@ get_battery_percent() {
     fi
 }
 
-get_charging_status() {
+get_status() {
     if [ -f "${BATTERY_PATH}/status" ]; then
         cat "${BATTERY_PATH}/status"
     else
@@ -176,71 +198,60 @@ get_charging_status() {
     fi
 }
 
+get_voltage() {
+    if [ -f "${BATTERY_PATH}/voltage_now" ]; then
+        echo "scale=2; $(cat ${BATTERY_PATH}/voltage_now) / 1000000" | bc
+    else
+        echo "?"
+    fi
+}
+
+get_current() {
+    if [ -f "${BATTERY_PATH}/current_now" ]; then
+        echo "scale=0; $(cat ${BATTERY_PATH}/current_now) / 1000" | bc
+    else
+        echo "?"
+    fi
+}
+
 case "$1" in
-    percent)
-        get_battery_percent
+    percent|p)
+        get_percent
         ;;
-    status)
-        get_charging_status
+    status|s)
+        get_status
+        ;;
+    voltage|v)
+        get_voltage
+        ;;
+    current|c)
+        get_current
+        ;;
+    json|j)
+        echo "{\"percent\": $(get_percent), \"status\": \"$(get_status)\", \"voltage\": $(get_voltage), \"current\": $(get_current)}"
         ;;
     *)
-        echo "Battery: $(get_battery_percent)% ($(get_charging_status))"
+        echo "Battery: $(get_percent)% ($(get_status))"
+        echo "Voltage: $(get_voltage)V"
+        echo "Current: $(get_current)mA"
         ;;
 esac
 BATTERY
-chmod +x /usr/local/bin/uconsole-battery-monitor
+chmod +x /usr/local/bin/uconsole-battery
 
-# Power button handler
-cat > /etc/systemd/system/uconsole-power-button.service << 'EOF'
-[Unit]
-Description=uConsole Power Button Handler
-After=multi-user.target
+# Backward compatibility
+ln -sf /usr/local/bin/uconsole-battery /usr/local/bin/uconsole-battery-monitor
 
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/uconsole-power-handler
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /usr/local/bin/uconsole-power-handler << 'POWER'
-#!/bin/bash
-# Handle power button events
-
-# Monitor GPIO for power button
-GPIO_PIN=4
-
-echo "$GPIO_PIN" > /sys/class/gpio/export 2>/dev/null || true
-echo "in" > /sys/class/gpio/gpio${GPIO_PIN}/direction
-
-while true; do
-    if [ "$(cat /sys/class/gpio/gpio${GPIO_PIN}/value)" = "0" ]; then
-        # Short press - do nothing, long press - shutdown
-        sleep 0.5
-        if [ "$(cat /sys/class/gpio/gpio${GPIO_PIN}/value)" = "0" ]; then
-            sleep 2
-            if [ "$(cat /sys/class/gpio/gpio${GPIO_PIN}/value)" = "0" ]; then
-                systemctl poweroff
-            fi
-        fi
-    fi
-    sleep 0.1
-done
-POWER
-chmod +x /usr/local/bin/uconsole-power-handler
-
-# -----------------------------------------------------------------------------
-# Keyboard Matrix
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Keyboard Configuration
+# =============================================================================
 log "Configuring keyboard..."
 
-# The uConsole keyboard is typically handled by the firmware
-# but we can add custom key mappings
 mkdir -p /etc/udev/hwdb.d
 
 cat > /etc/udev/hwdb.d/90-uconsole-keyboard.hwdb << 'EOF'
 # uConsole keyboard customizations
+# Caps Lock as Escape (optional, comment out if not wanted)
 evdev:input:*
  KEYBOARD_KEY_70039=esc
 EOF
@@ -248,84 +259,85 @@ EOF
 systemd-hwdb update
 udevadm trigger
 
-# -----------------------------------------------------------------------------
-# WiFi/Bluetooth
-# -----------------------------------------------------------------------------
+# =============================================================================
+# WiFi/Bluetooth Configuration
+# =============================================================================
 log "Configuring wireless..."
-pacman -S --noconfirm --needed wireless-regdb iw wpa_supplicant
 
-# Set regulatory domain
+pacman -S --noconfirm --needed wireless-regdb iw 2>/dev/null || true
+
+# Set regulatory domain (change US to your country code if needed)
 echo "options cfg80211 ieee80211_regdom=US" > /etc/modprobe.d/wireless.conf
 
-# -----------------------------------------------------------------------------
-# 4G Module (optional) - Basic setup, run 02a-modem-setup.sh for full config
-# -----------------------------------------------------------------------------
-log "Setting up 4G module support (if present)..."
-pacman -S --noconfirm --needed \
-    modemmanager \
-    networkmanager \
-    usb_modeswitch \
-    libqmi \
-    libmbim \
-    mobile-broadband-provider-info
-
-cat > /etc/udev/rules.d/99-uconsole-4g.rules << 'EOF'
-# uConsole 4G Module (Quectel EG25-G)
-ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0125", ENV{ID_MM_DEVICE_PROCESS}="1"
-ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="dialout"
-EOF
-
-systemctl enable ModemManager
-systemctl enable NetworkManager
-
-info "Run ./02a-modem-setup.sh for full modem configuration"
-
-# -----------------------------------------------------------------------------
-# GPIO Access
-# -----------------------------------------------------------------------------
+# =============================================================================
+# GPIO Access Configuration
+# =============================================================================
 log "Setting up GPIO access..."
-groupadd -f gpio
+
+groupadd -f gpio 2>/dev/null || true
 
 cat > /etc/udev/rules.d/99-gpio.rules << 'EOF'
 SUBSYSTEM=="gpio*", PROGRAM="/bin/sh -c 'chown -R root:gpio /sys/class/gpio && chmod -R 770 /sys/class/gpio; chown -R root:gpio /sys/devices/platform/soc/*.gpio/gpio && chmod -R 770 /sys/devices/platform/soc/*.gpio/gpio'"
 SUBSYSTEM=="gpio", KERNEL=="gpiochip*", ACTION=="add", PROGRAM="/bin/sh -c 'chown root:gpio /dev/$name && chmod 660 /dev/$name'"
 EOF
 
-# -----------------------------------------------------------------------------
-# Firmware
-# -----------------------------------------------------------------------------
-log "Installing firmware packages..."
-pacman -S --noconfirm --needed \
-    linux-firmware \
-    raspberrypi-firmware
+# =============================================================================
+# udev Rules for uConsole Hardware
+# =============================================================================
+log "Installing udev rules..."
 
-# -----------------------------------------------------------------------------
-# Update boot config with overlays
-# -----------------------------------------------------------------------------
-log "Updating boot configuration..."
+# Battery udev rule
+cat > /etc/udev/rules.d/99-uconsole-battery.rules << 'EOF'
+# uConsole AXP228 Power Management
+SUBSYSTEM=="power_supply", ATTR{type}=="Battery", TAG+="systemd"
+EOF
 
-# Add overlay references if not present
-if ! grep -q "dtoverlay=vc4-kms-v3d" /boot/config.txt; then
-    cat >> /boot/config.txt << 'EOF'
+# 4G Module udev rule (for those who have it)
+cat > /etc/udev/rules.d/99-uconsole-4g.rules << 'EOF'
+# uConsole 4G Module (Quectel EG25-G)
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0125", ENV{ID_MM_DEVICE_PROCESS}="1"
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="dialout"
+EOF
 
-# Graphics
-dtoverlay=vc4-kms-v3d,cma-512
+udevadm control --reload-rules
+udevadm trigger
 
-# I2C for power management
-dtoverlay=i2c-gpio,i2c_gpio_sda=10,i2c_gpio_scl=11
+# =============================================================================
+# Install Firmware (if not present)
+# =============================================================================
+log "Checking firmware packages..."
+
+pacman -S --noconfirm --needed linux-firmware 2>/dev/null || true
+
+# =============================================================================
+# Create system info file
+# =============================================================================
+if [ ! -f /etc/uconsole-release ]; then
+    cat > /etc/uconsole-release << EOF
+UCONSOLE_MODULE=${MODULE}
+UCONSOLE_BASE_IMAGE=${BASE_IMAGE}
+SETUP_DATE=$(date -I)
 EOF
 fi
 
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-log "Cleaning up..."
-cd /
-rm -rf ${WORK_DIR}
-
+# =============================================================================
+# Summary
+# =============================================================================
+echo ""
 log "=============================================="
-log "Hardware drivers installation complete!"
+log "Hardware configuration complete!"
 log ""
-log "A reboot is recommended before continuing."
-log "After reboot, run: ./03-install-hyprland.sh"
+if [ "$BASE_IMAGE" = "manual" ]; then
+    warn "Manual installation detected."
+    warn "You may need to add uConsole overlays to /boot/config.txt"
+    warn "Required overlays: devterm-pmu, devterm-panel-uc, devterm-misc"
+    echo ""
+fi
+log "Utilities installed:"
+log "  uconsole-battery  - Check battery status"
+log ""
+log "Next steps:"
+log "  1. Reboot if this is the first run"
+log "  2. Run: ./02a-modem-setup.sh (if you have 4G modem)"
+log "  3. Run: ./03-install-hyprland.sh"
 log "=============================================="

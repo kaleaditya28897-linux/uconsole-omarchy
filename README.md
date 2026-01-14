@@ -15,125 +15,151 @@ A minimal, terminal-centric Arch Linux setup for ClockworkPi uConsole.
 
 | Module | Storage Options |
 |--------|-----------------|
-| **CM4** (BCM2711) | SD Card, eMMC, NVMe |
-| **CM5** (BCM2712) | SD Card, eMMC, NVMe |
+| **CM4 / CM4 Lite** (BCM2711) | SD Card, eMMC (non-Lite only) |
+| **CM4S** | SD Card |
+| **CM3** | SD Card |
+
+> **Note:** CM5 support is experimental. See [CM5 Notes](#cm5-notes).
 
 ## Requirements
 
-- ClockworkPi uConsole with CM4 or CM5 (8GB RAM recommended)
-- Storage: MicroSD card, eMMC, or NVMe SSD (32GB+ recommended)
-- Another Linux machine for initial installation
+- ClockworkPi uConsole with CM4, CM4 Lite, CM4S, or CM3
+- MicroSD card (32GB+ recommended, Class 10 or better)
+- Another Linux machine for flashing
 
-## Installation
+## Installation (Recommended: Hybrid Approach)
 
-### Quick Start (SD Card)
+The recommended approach uses a community-maintained Arch Linux ARM base image that includes the correct kernel and display drivers, then applies our customizations on top.
+
+### Step 1: Download Base Image
+
+Download the PotatoMania community image which includes:
+- Patched kernel with uConsole display/power drivers
+- Correct device tree overlays
+- Working WiFi, display, and battery support
 
 ```bash
-# Clone this repo
-git clone https://github.com/kaleaditya28897-linux/uconsole-omarchy.git
+# Download the image (works for CM3, CM4, CM4S, CM4 Lite)
+wget https://filehosting.faint.day/uconsole-stuff/archlinux-uconsole-cm3_cm4s-20250913.img.zst
+
+# Optional: verify checksum
+wget https://filehosting.faint.day/uconsole-stuff/archlinux-uconsole-cm3_cm4s-20250913.img.zst.b2sum
+b2sum -c archlinux-uconsole-cm3_cm4s-20250913.img.zst.b2sum
+```
+
+### Step 2: Flash to SD Card
+
+```bash
+# Find your SD card device (BE CAREFUL - wrong device = data loss!)
+lsblk
+
+# Flash the image (replace /dev/sdX with your actual device)
+zstdcat archlinux-uconsole-cm3_cm4s-20250913.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+
+# Ensure write completes
+sync
+```
+
+**Alternative tools:** Balena Etcher, Raspberry Pi Imager (use custom image option)
+
+### Step 3: First Boot on uConsole
+
+1. Insert SD card into uConsole
+2. Power on - you should see the display initialize
+3. Login with default credentials:
+   - **User:** `ucon`
+   - **Password:** `ucon`
+   - Root access via `sudo` (user has sudo privileges)
+
+> **Display stays black?** This can occasionally happen with DSI displays. Try power cycling (remove battery briefly if needed). See [Troubleshooting](#troubleshooting).
+
+### Step 4: Initial System Setup
+
+```bash
+# Expand filesystem to use full SD card
+sudo growpart /dev/mmcblk0 2
+sudo resize2fs /dev/mmcblk0p2
+
+# Initialize pacman keyring
+sudo pacman-key --init
+sudo pacman-key --populate archlinux archlinuxarm
+
+# Update system
+sudo pacman -Syu --noconfirm
+
+# Install git (needed to clone this repo)
+sudo pacman -S --noconfirm git
+```
+
+### Step 5: Apply Omarchy Customizations
+
+```bash
+# Clone this repository
+git clone https://github.com/yourusername/uconsole-omarchy.git
 cd uconsole-omarchy
 
 # Make scripts executable
 chmod +x scripts/*.sh
 
-# Install to SD card (CM4, default)
-sudo ./scripts/01-install.sh /dev/sdX
-```
+# Run setup scripts in order (as root)
+sudo su -
 
-### Installation Options
+cd /home/ucon/uconsole-omarchy/scripts
 
-The universal installer supports multiple configurations:
+# Optional: 4G modem setup (if you have the 4G extension)
+./02a-modem-setup.sh
 
-```bash
-# CM4 + SD Card (default)
-sudo ./scripts/01-install.sh /dev/sdX
+# Install Hyprland and Wayland stack
+./03-install-hyprland.sh
 
-# CM4 + eMMC
-sudo ./scripts/01-install.sh -m cm4 -s emmc /dev/sdX
+# Install development environment
+./04-setup-environment.sh
 
-# CM4 + NVMe
-sudo ./scripts/01-install.sh -m cm4 -s nvme /dev/nvme0n1
+# Optional: Install security/pentesting tools
+./05-install-security-tools.sh
 
-# CM5 + SD Card
-sudo ./scripts/01-install.sh -m cm5 /dev/sdX
+# Configure system services (power management, etc.)
+./06-system-services.sh
 
-# CM5 + eMMC
-sudo ./scripts/01-install.sh -m cm5 -s emmc /dev/sdX
+# Final bootstrap (shell configs, dotfiles)
+./07-bootstrap.sh
 
-# CM5 + NVMe
-sudo ./scripts/01-install.sh -m cm5 -s nvme /dev/nvme0n1
-```
-
-### eMMC Installation
-
-To flash the eMMC, you need to use `rpiboot` to expose it as a USB mass storage device:
-
-```bash
-# Install rpiboot (run once on host machine)
-sudo ./scripts/00-rpiboot-setup.sh
-
-# Set boot switch on uConsole to USB boot mode
-# Connect uConsole via USB-C
-
-# Expose eMMC
-sudo rpiboot
-
-# Wait for device to appear, then flash
-sudo ./scripts/01-install.sh -m cm4 -s emmc /dev/sdX
-```
-
-### NVMe Installation
-
-For NVMe boot, you may need to update the EEPROM:
-
-```bash
-# Flash NVMe
-sudo ./scripts/01-install.sh -m cm4 -s nvme /dev/nvme0n1
-
-# After first boot, update EEPROM for NVMe boot:
-sudo rpi-eeprom-config --edit
-# Set: BOOT_ORDER=0xf416
-```
-
-### First Boot (on uConsole)
-
-1. Insert storage and power on
-2. Login as `alarm` / `alarm`
-3. Switch to root: `su -` (password: `root`)
-4. Run first boot setup:
-
-```bash
-./first-boot.sh
-```
-
-### Install Components
-
-Copy scripts to uConsole and run in order:
-
-```bash
-# Transfer scripts (from host)
-scp -r uconsole-omarchy alarm@<uconsole-ip>:~/
-
-# On uConsole, as root:
-cd ~/uconsole-omarchy/scripts
-
-./02-uconsole-drivers.sh      # Hardware drivers (auto-detects CM4/CM5)
-./02a-modem-setup.sh          # 4G modem + NetworkManager (optional)
-reboot
-
-./03-install-hyprland.sh      # Hyprland + Wayland
-./04-setup-environment.sh     # Dev tools, neovim, zsh
-./05-install-security-tools.sh  # Security/hacking tools
-./06-system-services.sh       # Power management, services
-./07-bootstrap.sh             # Final setup
-
+# Reboot to apply all changes
 reboot
 ```
+
+### Step 6: Start Using
+
+After reboot, login as `cyber` (password: `cyber`) and start Hyprland:
+
+```bash
+Hyprland
+```
+
+Or enable auto-start by adding to `~/.bash_profile`:
+```bash
+if [ -z "$WAYLAND_DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
+    exec Hyprland
+fi
+```
+
+## Alternative: Manual Installation
+
+If you prefer to build from scratch or need more control, you can use the manual installation method. This is more complex and requires understanding of Raspberry Pi boot configuration.
+
+See [docs/MANUAL_INSTALL.md](docs/MANUAL_INSTALL.md) for details.
+
+> **Warning:** The manual method requires adding ClockworkPi's kernel patches and device tree overlays. The standard Arch Linux ARM image will NOT boot with a working display on uConsole.
 
 ## Default Credentials
 
-- **User:** `cyber`
-- **Password:** `cyber` (CHANGE THIS!)
+| User | Password | Notes |
+|------|----------|-------|
+| `ucon` | `ucon` | Base image default, has sudo |
+| `cyber` | `cyber` | Created by our scripts |
+| `root` | (none) | Use sudo instead |
+
+**Change these passwords after setup!**
 
 ## Keybindings
 
@@ -155,100 +181,120 @@ Run `keys` for a quick reference. Key bindings:
 ```
 uconsole-omarchy/
 ├── scripts/
-│   ├── 00-rpiboot-setup.sh    # rpiboot for eMMC flashing
-│   ├── 01-install.sh          # Universal installer (CM4/CM5, SD/eMMC/NVMe)
-│   ├── 02-uconsole-drivers.sh # Hardware drivers
-│   ├── 02a-modem-setup.sh     # 4G modem setup
-│   ├── 03-install-hyprland.sh # Hyprland compositor
-│   ├── 04-setup-environment.sh # Dev environment
+│   ├── 00-rpiboot-setup.sh       # rpiboot for eMMC flashing (advanced)
+│   ├── 01-install.sh             # Manual installer (advanced)
+│   ├── 02-uconsole-drivers.sh    # Additional driver configs
+│   ├── 02a-modem-setup.sh        # 4G modem setup
+│   ├── 03-install-hyprland.sh    # Hyprland compositor
+│   ├── 04-setup-environment.sh   # Dev environment
 │   ├── 05-install-security-tools.sh
-│   ├── 06-system-services.sh  # Power management
-│   └── 07-bootstrap.sh        # Final setup
+│   ├── 06-system-services.sh     # Power management
+│   └── 07-bootstrap.sh           # Final setup
 ├── configs/
-│   ├── waybar/                # Status bar
-│   ├── foot/                  # Terminal
-│   ├── fuzzel/                # Launcher
-│   └── mako/                  # Notifications
+│   ├── waybar/                   # Status bar
+│   ├── foot/                     # Terminal
+│   ├── fuzzel/                   # Launcher
+│   └── mako/                     # Notifications
 ├── LICENSE
 └── README.md
 ```
 
 ## CM5 Notes
 
-The Raspberry Pi CM5 uses the BCM2712 SoC (same as Pi 5). Key differences:
+The Raspberry Pi CM5 uses the BCM2712 SoC (same as Pi 5). CM5 support for uConsole is still experimental:
 
-- **Performance**: Faster CPU, PCIe Gen 3 support
-- **Kernel**: May require `linux-rpi-16k` package
-- **Drivers**: Some uConsole-specific drivers may need updates
-- **Power**: Better power management, different thermal characteristics
+- **Kernel:** Requires different kernel/patches than CM4
+- **Overlays:** Need `clockworkpi-uconsole-cm5` overlay
+- **Status:** Community efforts ongoing, check forums for latest
 
-The installer and driver scripts automatically detect CM4 vs CM5 and apply appropriate configurations.
-
-## Customization
-
-### Adding packages
-
-Edit the relevant script in `scripts/` to add packages to the installation.
-
-### Changing keybindings
-
-Edit `~/.config/hypr/hyprland.conf`
-
-### Theme colors
-
-The setup uses Tokyo Night theme. Colors can be changed in:
-- `~/.config/hypr/hyprland.conf`
-- `~/.config/waybar/style.css`
-- `~/.config/foot/foot.ini`
-- `~/.config/nvim/init.lua`
+For CM5, see: [Arch Linux ARM for uConsole w/ RPi CM5](https://forum.clockworkpi.com/t/arch-linux-arm-for-uconsole-w-rpi-cm5/16382)
 
 ## Troubleshooting
 
-### Display not working
-Check `/boot/config.txt` display settings. The uConsole uses a DSI display that may require specific overlays.
+### Display stays black after boot
 
-### WiFi issues
+The DSI display driver can occasionally fail to initialize. Try:
+
+1. **Power cycle:** Turn off, wait 10 seconds, turn on
+2. **Remove battery:** If power cycle doesn't work, remove battery briefly
+3. **Check connection:** Ensure the display ribbon cable is seated properly
+4. **Try SSH:** The system may be running - try `ssh ucon@uconsole.local`
+
+### Can't find uConsole on network
+
 ```bash
-nmtui  # TUI network manager
+# Scan your local network
+nmap -sn 192.168.1.0/24
+
+# Or check router's DHCP leases
+```
+
+### WiFi not working
+
+```bash
+# Check if WiFi is detected
+ip link show wlan0
+
+# Use NetworkManager TUI
+nmtui
+
+# Or command line
 nmcli device wifi list
 nmcli device wifi connect "SSID" password "password"
 ```
 
-### 4G Modem not working
+### 4G Modem not detected
+
 ```bash
 # Check if modem is detected
 lsusb | grep -i quectel
+
+# Check ModemManager
 mmcli -L
 
-# Check ModemManager status
+# Check status
 systemctl status ModemManager
 
-# Use modem helper
+# Use modem helper (after running 02a-modem-setup.sh)
 modem status
 modem setup <your-apn>
 modem connect
 ```
 
-### NVMe not booting
-```bash
-# Check EEPROM boot order
-sudo rpi-eeprom-config
+### Battery percentage not showing
 
-# Update to boot from NVMe
-sudo rpi-eeprom-config --edit
-# Set: BOOT_ORDER=0xf416
-```
+The AXP228 power management chip requires the kernel driver:
 
-### Battery not showing
-The AXP228 power management chip requires specific kernel modules:
 ```bash
+# Check if module is loaded
 lsmod | grep axp
+
+# Check battery status
+cat /sys/class/power_supply/axp20x-battery/capacity
 ```
 
-### Hyprland crashes
+### Hyprland crashes or won't start
+
 ```bash
+# Check logs
 journalctl --user -u hyprland
 cat ~/.local/share/hyprland/hyprland.log
+
+# Try with software rendering
+WLR_RENDERER_ALLOW_SOFTWARE=1 Hyprland
+```
+
+### Audio not working
+
+```bash
+# Check PipeWire status
+systemctl --user status pipewire pipewire-pulse wireplumber
+
+# List audio devices
+wpctl status
+
+# Set default output
+wpctl set-default <sink-id>
 ```
 
 ## Tools Included
@@ -259,7 +305,7 @@ cat ~/.local/share/hyprland/hyprland.log
 - Git + lazygit + delta
 - fzf, ripgrep, fd, bat, eza
 
-### Security
+### Security (optional, via 05-install-security-tools.sh)
 - Network: nmap, masscan, wireshark, tcpdump
 - Web: nikto, sqlmap, gobuster, ffuf
 - Password: john, hashcat, hydra
@@ -269,9 +315,21 @@ cat ~/.local/share/hyprland/hyprland.log
 
 ### System
 - Docker + docker-compose
-- Ansible, Terraform
 - TLP power management
 - Zram swap
+
+## Resources
+
+- [ClockworkPi uConsole Official Repo](https://github.com/clockworkpi/uConsole)
+- [ClockworkPi Forum](https://forum.clockworkpi.com)
+- [PotatoMania's Arch Linux Image Builder](https://github.com/PotatoMania/uconsole-cm3-arch-image-builder)
+- [ArchLinux ARM for uConsole Documentation](https://forum.clockworkpi.com/t/archlinux-arm-for-uconsole-cm4-living-documentation/12804)
+
+## Credits
+
+- [PotatoMania](https://github.com/PotatoMania) - Arch Linux ARM image and kernel patches
+- [ClockworkPi](https://github.com/clockworkpi) - uConsole hardware and base drivers
+- Community contributors on the ClockworkPi forums
 
 ## License
 
