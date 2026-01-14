@@ -296,7 +296,7 @@ EOF
 cat > /etc/udev/rules.d/99-uconsole-4g.rules << 'EOF'
 # uConsole 4G Module (Quectel EG25-G)
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0125", ENV{ID_MM_DEVICE_PROCESS}="1"
-ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="dialout"
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="uucp"
 EOF
 
 udevadm control --reload-rules

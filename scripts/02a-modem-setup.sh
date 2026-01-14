@@ -66,7 +66,7 @@ cat > /etc/udev/rules.d/77-mm-quectel.rules << 'UDEV'
 ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0125", ENV{ID_MM_DEVICE_PROCESS}="1"
 
 # Set proper permissions
-ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="dialout"
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", MODE="0666", GROUP="uucp"
 
 # QMI interface
 ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", ENV{ID_MM_PORT_TYPE_QMI}="1"
@@ -459,10 +459,10 @@ systemctl start ModemManager 2>/dev/null || true
 systemctl start NetworkManager 2>/dev/null || true
 
 # =============================================================================
-# Add user to dialout group
+# Add user to uucp group (serial port access on Arch)
 # =============================================================================
-log "Adding user to dialout group..."
-usermod -aG dialout ${USERNAME}
+log "Adding user to uucp group..."
+usermod -aG uucp ${USERNAME}
 
 # =============================================================================
 # Set ownership
