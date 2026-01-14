@@ -101,6 +101,11 @@ cd uconsole-omarchy
 # Make scripts executable
 chmod +x scripts/*.sh
 
+#Run the quick-setup script
+./quick-setup.sh
+
+alternatively, you can do it manually if you want more control over the installed packages.
+
 # Run setup scripts in order (as root)
 sudo su -
 
